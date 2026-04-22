@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vehicle Fleet Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-1: #f6f7f4;
+      --bg-2: #d7e8dd;
+      --card: rgba(255, 255, 255, 0.72);
+      --text: #132518;
+      --muted: #4c6254;
+      --online: #0f9d58;
+      --offline: #c94a3f;
+      --accent: #0b7d77;
+      --shadow: 0 14px 40px rgba(14, 43, 29, 0.14);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(16, 125, 90, 0.24), transparent 42%),
+        radial-gradient(circle at 84% 8%, rgba(12, 103, 132, 0.2), transparent 38%),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+      display: grid;
+      place-items: center;
+      padding: 22px;
+    }
+
+    .wrap {
+      width: min(1100px, 100%);
+      display: grid;
+      gap: 18px;
+      animation: rise 0.6s ease;
+    }
+
+    .hero {
+      border-radius: var(--radius);
+      background: linear-gradient(120deg, rgba(255,255,255,0.86), rgba(240,251,246,0.82));
+      box-shadow: var(--shadow);
+      padding: 20px;
+      border: 1px solid rgba(19, 37, 24, 0.08);
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 2.7vw, 2.3rem);
+      font-family: "Sora", sans-serif;
+      letter-spacing: 0.3px;
+    }
+
+    .hero p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(19, 37, 24, 0.08);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transform: translateY(8px);
+      opacity: 0;
+      animation: pop 0.7s ease forwards;
+    }
+
+    .card:nth-child(2) { animation-delay: 0.12s; }
+
+    .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .name {
+      margin: 0;
+      font-family: "Sora", sans-serif;
+      font-size: 1.1rem;
+    }
+
+    .pill {
+      font-size: 0.82rem;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      color: white;
+    }
+
+    .online { background: var(--online); }
+    .offline { background: var(--offline); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .metric {
+      background: rgba(255, 255, 255, 0.65);
+      border-radius: 14px;
+      padding: 10px;
+      border: 1px solid rgba(19, 37, 24, 0.06);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
+
+    .metric strong {
+      font-size: 0.98rem;
+      font-weight: 700;
+    }
+
+    .event {
+      margin-top: 12px;
+      background: rgba(11, 125, 119, 0.09);
+      border: 1px dashed rgba(11, 125, 119, 0.45);
+      border-radius: 12px;
+      padding: 10px;
+      color: #134f4b;
+      font-size: 0.88rem;
+      min-height: 42px;
+    }
+
+    .foot {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 2px;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pop {
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Smart Vehicle Fleet Dashboard</h1>
+      <p>Live online/offline status and telemetry for Vehicle 1 and Vehicle 2.</p>
+    </section>
+
+    <section class="cards" id="cards"></section>
+    <div class="foot" id="updated">Last updated: -</div>
+  </main>
+
+  <script>
+    const cardsEl = document.getElementById("cards");
+    const updatedEl = document.getElementById("updated");
+
+    function fmt(value, fallback = "-") {
+      return value === null || value === undefined || value === "" ? fallback : value;
+    }
+
+    function renderVehicle(v) {
+      const statusClass = v.isOnline ? "online" : "offline";
+      const statusText = v.isOnline ? "ONLINE" : "OFFLINE";
+
+      return `
+        <article class="card">
+          <div class="head">
+            <h2 class="name">${v.name}</h2>
+            <span class="pill ${statusClass}">${statusText}</span>
+          </div>
+
+          <div class="grid">
+            <div class="metric"><span>IP</span><strong>${fmt(v.ip)}</strong></div>
+            <div class="metric"><span>Battery</span><strong>${fmt(v.battery)}%</strong></div>
+            <div class="metric"><span>Distance</span><strong>${fmt(v.distanceCm)} cm</strong></div>
+            <div class="metric"><span>Speed PWM</span><strong>${fmt(v.speedPwm)}</strong></div>
+            <div class="metric"><span>Avg Accel</span><strong>${fmt(v.accel)}</strong></div>
+            <div class="metric"><span>Avg Gyro</span><strong>${fmt(v.gyro)}</strong></div>
+            <div class="metric"><span>Motor</span><strong>${v.motorRunning ? "RUNNING" : "STOPPED"}</strong></div>
+            <div class="metric"><span>Emergency</span><strong>${v.emergencyMode ? "ON" : "OFF"}</strong></div>
+          </div>
+
+          <div class="event">${fmt(v.lastEvent, "No events yet")}</div>
+        </article>
+      `;
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch("/api/status", { cache: "no-store" });
+        const data = await response.json();
+        cardsEl.innerHTML = data.vehicles.map(renderVehicle).join("");
+        updatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+      } catch (err) {
+        updatedEl.textContent = "Server unreachable. Retrying...";
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>

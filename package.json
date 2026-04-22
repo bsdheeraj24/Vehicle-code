@@ -1,0 +1,16 @@
+{
+  "name": "vehicle-monitor-server",
+  "version": "1.0.0",
+  "description": "Render-deployable server and dashboard for two ESP32 vehicle status monitoring",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
