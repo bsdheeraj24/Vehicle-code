@@ -19,6 +19,11 @@ const int resolution = 8;
 int dutyCycle = 200;
 bool motorRunning = false;
 unsigned long lastPushMs = 0;
+float lastDistanceCm = -1;
+bool obstacleDetected = false;
+bool previousObstacleDetected = false;
+
+const float obstacleThresholdCm = 30.0;
 
 void moveForward() {
     digitalWrite(motor1Pin1, HIGH);
@@ -47,6 +52,16 @@ void postEvent(String eventName) {
 }
 
 void sendHeartbeat() {
+    lastDistanceCm = random(20, 120);
+    float simulatedAccel = random(10, 40) / 10.0;
+    float simulatedGyro = random(5, 25) / 10.0;
+
+    obstacleDetected = lastDistanceCm > 0 && lastDistanceCm < obstacleThresholdCm;
+    if (obstacleDetected && !previousObstacleDetected) {
+        postEvent("Obstacle avoidance triggered");
+    }
+    previousObstacleDetected = obstacleDetected;
+
     if (WiFi.status() != WL_CONNECTED) return;
 
     HTTPClient http;
@@ -55,16 +70,12 @@ void sendHeartbeat() {
     http.addHeader("Content-Type", "application/json");
 
     String ip = WiFi.localIP().toString();
-    float simulatedDistance = random(20, 120);
-    float simulatedAccel = random(10, 40) / 10.0;
-    float simulatedGyro = random(5, 25) / 10.0;
 
     String payload = "{";
     payload += "\"ip\":\"" + ip + "\",";
-    payload += "\"distanceCm\":" + String(simulatedDistance, 1) + ",";
+    payload += "\"distanceCm\":" + String(lastDistanceCm, 1) + ",";
     payload += "\"accel\":" + String(simulatedAccel, 2) + ",";
     payload += "\"gyro\":" + String(simulatedGyro, 2) + ",";
-    payload += "\"speedPwm\":" + String(dutyCycle) + ",";
     payload += "\"motorRunning\":" + String(motorRunning ? "true" : "false") + ",";
     payload += "\"emergencyMode\":false";
     payload += "}";
@@ -106,9 +117,17 @@ void loop() {
 
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("Running PWM:");
-        lcd.setCursor(0, 1);
-        lcd.print(dutyCycle);
+        if (obstacleDetected) {
+            lcd.print("Obstacle Avoid");
+            lcd.setCursor(0, 1);
+            lcd.print("Dist: ");
+            lcd.print(lastDistanceCm, 1);
+            lcd.print(" cm");
+        } else {
+            lcd.print("Vehicle 2 Ready");
+            lcd.setCursor(0, 1);
+            lcd.print("LCD Display");
+        }
 
         lastPushMs = millis();
     }

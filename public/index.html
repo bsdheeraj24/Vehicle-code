@@ -65,6 +65,22 @@
       font-size: 0.98rem;
     }
 
+    .alert-banner {
+      display: none;
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      background: linear-gradient(120deg, rgba(201, 74, 63, 0.15), rgba(255, 239, 233, 0.95));
+      border: 1px solid rgba(201, 74, 63, 0.35);
+      color: #8f251c;
+      font-weight: 700;
+      box-shadow: var(--shadow);
+      animation: pop 0.45s ease forwards;
+    }
+
+    .alert-banner.show {
+      display: block;
+    }
+
     .cards {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -172,6 +188,8 @@
       <p>Live online/offline status and telemetry for Vehicle 1 and Vehicle 2.</p>
     </section>
 
+    <section class="alert-banner" id="vehicleAlert" role="alert" aria-live="polite"></section>
+
     <section class="cards" id="cards"></section>
     <div class="foot" id="updated">Last updated: -</div>
   </main>
@@ -179,14 +197,22 @@
   <script>
     const cardsEl = document.getElementById("cards");
     const updatedEl = document.getElementById("updated");
+    const vehicleAlertEl = document.getElementById("vehicleAlert");
 
     function fmt(value, fallback = "-") {
       return value === null || value === undefined || value === "" ? fallback : value;
     }
 
+    function isObstacleEvent(eventText) {
+      return /collision warning|obstacle/i.test(eventText || "");
+    }
+
     function renderVehicle(v) {
       const statusClass = v.isOnline ? "online" : "offline";
       const statusText = v.isOnline ? "ONLINE" : "OFFLINE";
+      const speedMetric = v.id === "vehicle1"
+        ? `<div class="metric"><span>Speed PWM</span><strong>${fmt(v.speedPwm)}</strong></div>`
+        : "";
 
       return `
         <article class="card">
@@ -199,7 +225,7 @@
             <div class="metric"><span>IP</span><strong>${fmt(v.ip)}</strong></div>
             <div class="metric"><span>Battery</span><strong>${fmt(v.battery)}%</strong></div>
             <div class="metric"><span>Distance</span><strong>${fmt(v.distanceCm)} cm</strong></div>
-            <div class="metric"><span>Speed PWM</span><strong>${fmt(v.speedPwm)}</strong></div>
+            ${speedMetric}
             <div class="metric"><span>Avg Accel</span><strong>${fmt(v.accel)}</strong></div>
             <div class="metric"><span>Avg Gyro</span><strong>${fmt(v.gyro)}</strong></div>
             <div class="metric"><span>Motor</span><strong>${v.motorRunning ? "RUNNING" : "STOPPED"}</strong></div>
@@ -216,6 +242,16 @@
         const response = await fetch("/api/status", { cache: "no-store" });
         const data = await response.json();
         cardsEl.innerHTML = data.vehicles.map(renderVehicle).join("");
+
+        const vehicle1 = data.vehicles.find((v) => v.id === "vehicle1");
+        if (vehicle1 && isObstacleEvent(vehicle1.lastEvent)) {
+          vehicleAlertEl.textContent = `Alert: Vehicle 1 obstacle detected. ${vehicle1.lastEvent}`;
+          vehicleAlertEl.classList.add("show");
+        } else {
+          vehicleAlertEl.textContent = "";
+          vehicleAlertEl.classList.remove("show");
+        }
+
         updatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
       } catch (err) {
         updatedEl.textContent = "Server unreachable. Retrying...";
