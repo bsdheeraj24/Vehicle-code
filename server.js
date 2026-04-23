@@ -1,4 +1,4 @@
-const express = require("express");
+         const express = require("express");
 const cors = require("cors");
 const path = require("path");
 
@@ -76,7 +76,11 @@ app.post("/api/vehicle/:id/heartbeat", (req, res) => {
   target.distanceCm = typeof body.distanceCm === "number" ? body.distanceCm : target.distanceCm;
   target.accel = typeof body.accel === "number" ? body.accel : target.accel;
   target.gyro = typeof body.gyro === "number" ? body.gyro : target.gyro;
-  target.speedPwm = typeof body.speedPwm === "number" ? body.speedPwm : target.speedPwm;
+  if (id === "vehicle1") {
+    target.speedPwm = typeof body.speedPwm === "number" ? body.speedPwm : target.speedPwm;
+  } else {
+    target.speedPwm = null;
+  }
   target.motorRunning = typeof body.motorRunning === "boolean" ? body.motorRunning : target.motorRunning;
   target.emergencyMode = typeof body.emergencyMode === "boolean" ? body.emergencyMode : target.emergencyMode;
 
