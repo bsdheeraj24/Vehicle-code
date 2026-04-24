@@ -20,6 +20,7 @@ const int freq = 30000;
 const int pwmChannel = 0;
 const int resolution = 8;
 int dutyCycle = 200;
+const int minStartPwm = 110;
 bool motorRunning = false;
 unsigned long lastPushMs = 0;
 unsigned long lastControlPullMs = 0;
@@ -93,6 +94,10 @@ void applyControlCommand(String direction, int speedPwm) {
         return;
     }
 
+    if (direction != "stop" && dutyCycle > 0 && dutyCycle < minStartPwm) {
+        dutyCycle = minStartPwm;
+    }
+
     if (direction == "forward") {
         moveForward();
         return;
@@ -114,6 +119,8 @@ void pullControlCommand() {
     http.begin(url);
     int statusCode = http.GET();
     if (statusCode != 200) {
+        Serial.print("Vehicle 2 control GET failed: ");
+        Serial.println(statusCode);
         http.end();
         return;
     }
@@ -126,6 +133,10 @@ void pullControlCommand() {
     if (direction.length() == 0 || speedValue.length() == 0) return;
 
     int speedPwm = speedValue.toInt();
+    Serial.print("Vehicle 2 cmd -> dir: ");
+    Serial.print(direction);
+    Serial.print(", pwm: ");
+    Serial.println(speedPwm);
     applyControlCommand(direction, speedPwm);
 }
 

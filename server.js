@@ -42,7 +42,7 @@ const state = {
     emergencyMode: false,
     lastEvent: "No events yet",
     desiredDirection: "stop",
-    desiredSpeedPwm: 0,
+    desiredSpeedPwm: 180,
     commandUpdatedAt: null
   },
   vehicle2: {
@@ -61,7 +61,7 @@ const state = {
     emergencyMode: false,
     lastEvent: "No events yet",
     desiredDirection: "stop",
-    desiredSpeedPwm: 0,
+    desiredSpeedPwm: 180,
     commandUpdatedAt: null
   }
 };

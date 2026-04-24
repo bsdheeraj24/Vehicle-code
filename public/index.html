@@ -275,7 +275,7 @@
     function renderVehicle(v) {
       const statusClass = v.isOnline ? "online" : "offline";
       const statusText = v.isOnline ? "ONLINE" : "OFFLINE";
-      const selectedSpeed = Number.isFinite(v.desiredSpeedPwm) ? v.desiredSpeedPwm : 150;
+      const selectedSpeed = Number.isFinite(v.desiredSpeedPwm) && v.desiredSpeedPwm > 0 ? v.desiredSpeedPwm : 180;
       const selectedDirection = typeof v.desiredDirection === "string" ? v.desiredDirection : "stop";
 
       const directionButton = (dir, label) => `
@@ -337,7 +337,8 @@
     async function sendControl(vehicleId, direction) {
       const slider = cardsEl.querySelector(`[data-speed-slider="${vehicleId}"]`);
       const note = document.getElementById(`control-note-${vehicleId}`);
-      const speedPwm = direction === "stop" ? 0 : Number(slider?.value || 0);
+      const requestedSpeed = Number(slider?.value ?? 180);
+      const speedPwm = direction === "stop" ? 0 : Math.max(80, requestedSpeed);
 
       if (note) {
         note.textContent = "Sending command...";
