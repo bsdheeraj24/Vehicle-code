@@ -7,22 +7,28 @@
 
 #define TRIG_PIN 12
 #define ECHO_PIN 13
-#define motor1Pin1 25
-#define motor1Pin2 33
-#define enable1Pin 26
+
+// Motor pins (L298N) based on your working reference code
+const int motor1Pin1 = 27;
+const int motor1Pin2 = 26;
+const int enable1Pin = 14;
 
 const char* ssid = "Dheeraj";
 const char* password = "dheerubs";
+// IMPORTANT: Replace with your actual Render URL.
 const char* serverBaseUrl = "https://your-render-service.onrender.com";
 
-const int freq = 2000;
+// PWM properties based on your working reference code
+const int freq = 30000;
 const int pwmChannel = 0;
 const int resolution = 8;
-int dutyCycle = 150;
+
+int dutyCycle = 200;
 
 Adafruit_MPU6050 mpu;
 bool motorRunning = false;
 bool emergencyMode = false;
+bool previousEmergencyMode = false;
 unsigned long lastPushMs = 0;
 unsigned long lastControlPullMs = 0;
 String currentDirection = "stop";
@@ -33,6 +39,7 @@ float getDistance() {
     digitalWrite(TRIG_PIN, HIGH);
     delayMicroseconds(10);
     digitalWrite(TRIG_PIN, LOW);
+
     long duration = pulseIn(ECHO_PIN, HIGH, 30000);
     if (duration == 0) return -1;
     return duration * 0.034 / 2;
@@ -93,6 +100,11 @@ String readJsonValue(String payload, String key) {
 
 void applyControlCommand(String direction, int speedPwm) {
     dutyCycle = constrain(speedPwm, 0, 255);
+
+    if (emergencyMode) {
+        stopMotor();
+        return;
+    }
 
     if (direction == "forward") {
         moveForward();
@@ -169,21 +181,30 @@ void sendHeartbeat(float distanceCm, float accel, float gyro) {
 
 void setup() {
     Serial.begin(115200);
+    Serial.println("Vehicle 1 booting...");
 
     pinMode(TRIG_PIN, OUTPUT);
     pinMode(ECHO_PIN, INPUT);
+
     pinMode(motor1Pin1, OUTPUT);
     pinMode(motor1Pin2, OUTPUT);
     pinMode(enable1Pin, OUTPUT);
+
     ledcSetup(pwmChannel, freq, resolution);
     ledcAttachPin(enable1Pin, pwmChannel);
+    ledcWrite(pwmChannel, dutyCycle);
+
+    stopMotor();
 
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) {
         delay(1000);
+        Serial.println("Connecting to WiFi...");
     }
+    Serial.println("WiFi connected");
 
     if (!mpu.begin()) {
+        Serial.println("MPU6050 not found");
         while (1) {
             delay(100);
         }
@@ -193,7 +214,7 @@ void setup() {
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
 
-    stopMotor();
+    postEvent("Vehicle 1 online");
 }
 
 void loop() {
@@ -204,9 +225,18 @@ void loop() {
     float avgGyro = (fabs(g.gyro.x) + fabs(g.gyro.y) + fabs(g.gyro.z)) / 3.0;
     float distance = getDistance();
 
-    if (distance > 0 && distance < 10.0) {
+    emergencyMode = (distance > 0 && distance < 10.0);
+    if (emergencyMode) {
         stopMotor();
-        postEvent("Collision warning");
+    }
+
+    if (emergencyMode != previousEmergencyMode) {
+        if (emergencyMode) {
+            postEvent("Collision warning");
+        } else {
+            postEvent("Path clear");
+        }
+        previousEmergencyMode = emergencyMode;
     }
 
     if (millis() - lastControlPullMs > 700) {

@@ -4,15 +4,18 @@
 #include <LiquidCrystal_I2C.h>
 #include <esp32-hal-ledc.h>
 
-#define motor1Pin1 27
-#define motor1Pin2 26
-#define enable1Pin 14
+// Motor pins (L298N) based on your working reference code
+const int motor1Pin1 = 27;
+const int motor1Pin2 = 26;
+const int enable1Pin = 14;
 
 const char* ssid = "Dheeraj";
 const char* password = "dheerubs";
+// IMPORTANT: Replace with your actual Render URL.
 const char* serverBaseUrl = "https://your-render-service.onrender.com";
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+// PWM properties based on your working reference code
 const int freq = 30000;
 const int pwmChannel = 0;
 const int resolution = 8;
@@ -168,12 +171,14 @@ void sendHeartbeat() {
 
 void setup() {
     Serial.begin(115200);
+    Serial.println("Vehicle 2 booting...");
 
     pinMode(motor1Pin1, OUTPUT);
     pinMode(motor1Pin2, OUTPUT);
     pinMode(enable1Pin, OUTPUT);
     ledcSetup(pwmChannel, freq, resolution);
     ledcAttachPin(enable1Pin, pwmChannel);
+    ledcWrite(pwmChannel, dutyCycle);
 
     lcd.init();
     lcd.backlight();
@@ -188,6 +193,7 @@ void setup() {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Connected");
+    Serial.println("WiFi connected");
 
     stopMotor();
     postEvent("Vehicle 2 online");
