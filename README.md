@@ -4,6 +4,7 @@ This project gives you:
 - A deployable Node.js server for Render.
 - A modern dashboard webpage to show Vehicle 1 and Vehicle 2 as ONLINE/OFFLINE.
 - API endpoints for ESP32 vehicles to send heartbeat and events.
+- Dashboard-only speed and direction control for both vehicles.
 - Updated ESP32 sketches without traffic-light integration.
 
 ## Why HTTP Instead of UDP on Render
@@ -42,7 +43,24 @@ Render web services are HTTP/TCP based. Public inbound UDP is not suitable for s
 - POST /api/vehicle/vehicle2/heartbeat
 - POST /api/vehicle/vehicle1/event
 - POST /api/vehicle/vehicle2/event
+- GET /api/vehicle/vehicle1/control
+- GET /api/vehicle/vehicle2/control
+- POST /api/vehicle/vehicle1/control
+- POST /api/vehicle/vehicle2/control
 - GET /api/status
+
+### Dashboard Control Request Body
+Use `POST /api/vehicle/:id/control` with:
+
+```json
+{
+   "direction": "forward",
+   "speedPwm": 180
+}
+```
+
+- `direction` must be one of: `forward`, `reverse`, `stop`
+- `speedPwm` must be `0` to `255`
 
 ## GitHub Push Commands
 Run these commands in terminal inside this folder:

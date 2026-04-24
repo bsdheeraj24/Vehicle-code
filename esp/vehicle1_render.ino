@@ -1,6 +1,5 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <WebServer.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
@@ -21,30 +20,12 @@ const int pwmChannel = 0;
 const int resolution = 8;
 int dutyCycle = 150;
 
-WebServer server(80);
 Adafruit_MPU6050 mpu;
 bool motorRunning = false;
 bool emergencyMode = false;
 unsigned long lastPushMs = 0;
-
-const char htmlPage[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Vehicle 1</title>
-    <style>
-        body { text-align:center; font-family:Arial; margin-top:30px; }
-        button { padding:10px 20px; font-size:18px; margin:8px; }
-    </style>
-</head>
-<body>
-    <h2>Vehicle 1 Local Control</h2>
-    <button onclick="fetch('/start')">Start</button>
-    <button onclick="fetch('/stop')">Stop</button>
-    <button onclick="fetch('/emergency')">Emergency</button>
-</body>
-</html>
-)rawliteral";
+unsigned long lastControlPullMs = 0;
+String currentDirection = "stop";
 
 float getDistance() {
     digitalWrite(TRIG_PIN, LOW);
@@ -62,6 +43,15 @@ void moveForward() {
     digitalWrite(motor1Pin2, HIGH);
     ledcWrite(pwmChannel, dutyCycle);
     motorRunning = true;
+    currentDirection = "forward";
+}
+
+void moveReverse() {
+    digitalWrite(motor1Pin1, HIGH);
+    digitalWrite(motor1Pin2, LOW);
+    ledcWrite(pwmChannel, dutyCycle);
+    motorRunning = true;
+    currentDirection = "reverse";
 }
 
 void stopMotor() {
@@ -69,6 +59,75 @@ void stopMotor() {
     digitalWrite(motor1Pin2, LOW);
     ledcWrite(pwmChannel, 0);
     motorRunning = false;
+    currentDirection = "stop";
+}
+
+String readJsonValue(String payload, String key) {
+    String token = "\"" + key + "\"";
+    int keyIndex = payload.indexOf(token);
+    if (keyIndex < 0) return "";
+
+    int colonIndex = payload.indexOf(':', keyIndex + token.length());
+    if (colonIndex < 0) return "";
+
+    int valueStart = colonIndex + 1;
+    while (valueStart < payload.length() && payload[valueStart] == ' ') {
+        valueStart++;
+    }
+
+    if (valueStart >= payload.length()) return "";
+
+    if (payload[valueStart] == '"') {
+        int valueEnd = payload.indexOf('"', valueStart + 1);
+        if (valueEnd < 0) return "";
+        return payload.substring(valueStart + 1, valueEnd);
+    }
+
+    int valueEnd = valueStart;
+    while (valueEnd < payload.length() && payload[valueEnd] != ',' && payload[valueEnd] != '}') {
+        valueEnd++;
+    }
+
+    return payload.substring(valueStart, valueEnd);
+}
+
+void applyControlCommand(String direction, int speedPwm) {
+    dutyCycle = constrain(speedPwm, 0, 255);
+
+    if (direction == "forward") {
+        moveForward();
+        return;
+    }
+
+    if (direction == "reverse") {
+        moveReverse();
+        return;
+    }
+
+    stopMotor();
+}
+
+void pullControlCommand() {
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    HTTPClient http;
+    String url = String(serverBaseUrl) + "/api/vehicle/vehicle1/control";
+    http.begin(url);
+    int statusCode = http.GET();
+    if (statusCode != 200) {
+        http.end();
+        return;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    String direction = readJsonValue(payload, "direction");
+    String speedValue = readJsonValue(payload, "speedPwm");
+    if (direction.length() == 0 || speedValue.length() == 0) return;
+
+    int speedPwm = speedValue.toInt();
+    applyControlCommand(direction, speedPwm);
 }
 
 void postEvent(String eventName) {
@@ -99,6 +158,7 @@ void sendHeartbeat(float distanceCm, float accel, float gyro) {
     payload += "\"accel\":" + String(accel, 3) + ",";
     payload += "\"gyro\":" + String(gyro, 3) + ",";
     payload += "\"speedPwm\":" + String(dutyCycle) + ",";
+    payload += "\"direction\":\"" + currentDirection + "\",";
     payload += "\"motorRunning\":" + String(motorRunning ? "true" : "false") + ",";
     payload += "\"emergencyMode\":" + String(emergencyMode ? "true" : "false");
     payload += "}";
@@ -133,34 +193,10 @@ void setup() {
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
 
-    server.on("/", []() {
-        server.send(200, "text/html", htmlPage);
-    });
-
-    server.on("/start", []() {
-        moveForward();
-        postEvent("Motor started");
-        server.send(200, "text/plain", "Motor Started");
-    });
-
-    server.on("/stop", []() {
-        stopMotor();
-        postEvent("Motor stopped");
-        server.send(200, "text/plain", "Motor Stopped");
-    });
-
-    server.on("/emergency", []() {
-        emergencyMode = !emergencyMode;
-        postEvent(emergencyMode ? "Emergency ON" : "Emergency OFF");
-        server.send(200, "text/plain", "Emergency Toggled");
-    });
-
-    server.begin();
+    stopMotor();
 }
 
 void loop() {
-    server.handleClient();
-
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
 
@@ -171,6 +207,11 @@ void loop() {
     if (distance > 0 && distance < 10.0) {
         stopMotor();
         postEvent("Collision warning");
+    }
+
+    if (millis() - lastControlPullMs > 700) {
+        pullControlCommand();
+        lastControlPullMs = millis();
     }
 
     if (millis() - lastPushMs > 2500) {

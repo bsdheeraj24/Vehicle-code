@@ -19,9 +19,11 @@ const int resolution = 8;
 int dutyCycle = 200;
 bool motorRunning = false;
 unsigned long lastPushMs = 0;
+unsigned long lastControlPullMs = 0;
 float lastDistanceCm = -1;
 bool obstacleDetected = false;
 bool previousObstacleDetected = false;
+String currentDirection = "stop";
 
 const float obstacleThresholdCm = 30.0;
 
@@ -30,6 +32,15 @@ void moveForward() {
     digitalWrite(motor1Pin2, LOW);
     ledcWrite(pwmChannel, dutyCycle);
     motorRunning = true;
+    currentDirection = "forward";
+}
+
+void moveReverse() {
+    digitalWrite(motor1Pin1, LOW);
+    digitalWrite(motor1Pin2, HIGH);
+    ledcWrite(pwmChannel, dutyCycle);
+    motorRunning = true;
+    currentDirection = "reverse";
 }
 
 void stopMotor() {
@@ -37,6 +48,75 @@ void stopMotor() {
     digitalWrite(motor1Pin2, LOW);
     ledcWrite(pwmChannel, 0);
     motorRunning = false;
+    currentDirection = "stop";
+}
+
+String readJsonValue(String payload, String key) {
+    String token = "\"" + key + "\"";
+    int keyIndex = payload.indexOf(token);
+    if (keyIndex < 0) return "";
+
+    int colonIndex = payload.indexOf(':', keyIndex + token.length());
+    if (colonIndex < 0) return "";
+
+    int valueStart = colonIndex + 1;
+    while (valueStart < payload.length() && payload[valueStart] == ' ') {
+        valueStart++;
+    }
+
+    if (valueStart >= payload.length()) return "";
+
+    if (payload[valueStart] == '"') {
+        int valueEnd = payload.indexOf('"', valueStart + 1);
+        if (valueEnd < 0) return "";
+        return payload.substring(valueStart + 1, valueEnd);
+    }
+
+    int valueEnd = valueStart;
+    while (valueEnd < payload.length() && payload[valueEnd] != ',' && payload[valueEnd] != '}') {
+        valueEnd++;
+    }
+
+    return payload.substring(valueStart, valueEnd);
+}
+
+void applyControlCommand(String direction, int speedPwm) {
+    dutyCycle = constrain(speedPwm, 0, 255);
+
+    if (direction == "forward") {
+        moveForward();
+        return;
+    }
+
+    if (direction == "reverse") {
+        moveReverse();
+        return;
+    }
+
+    stopMotor();
+}
+
+void pullControlCommand() {
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    HTTPClient http;
+    String url = String(serverBaseUrl) + "/api/vehicle/vehicle2/control";
+    http.begin(url);
+    int statusCode = http.GET();
+    if (statusCode != 200) {
+        http.end();
+        return;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    String direction = readJsonValue(payload, "direction");
+    String speedValue = readJsonValue(payload, "speedPwm");
+    if (direction.length() == 0 || speedValue.length() == 0) return;
+
+    int speedPwm = speedValue.toInt();
+    applyControlCommand(direction, speedPwm);
 }
 
 void postEvent(String eventName) {
@@ -76,6 +156,8 @@ void sendHeartbeat() {
     payload += "\"distanceCm\":" + String(lastDistanceCm, 1) + ",";
     payload += "\"accel\":" + String(simulatedAccel, 2) + ",";
     payload += "\"gyro\":" + String(simulatedGyro, 2) + ",";
+    payload += "\"speedPwm\":" + String(dutyCycle) + ",";
+    payload += "\"direction\":\"" + currentDirection + "\",";
     payload += "\"motorRunning\":" + String(motorRunning ? "true" : "false") + ",";
     payload += "\"emergencyMode\":false";
     payload += "}";
@@ -107,11 +189,16 @@ void setup() {
     lcd.setCursor(0, 0);
     lcd.print("Connected");
 
-    moveForward();
+    stopMotor();
     postEvent("Vehicle 2 online");
 }
 
 void loop() {
+    if (millis() - lastControlPullMs > 700) {
+        pullControlCommand();
+        lastControlPullMs = millis();
+    }
+
     if (millis() - lastPushMs > 2500) {
         sendHeartbeat();
 

@@ -164,6 +164,71 @@
       min-height: 42px;
     }
 
+    .control {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(17, 66, 49, 0.07);
+      border: 1px solid rgba(19, 37, 24, 0.1);
+    }
+
+    .control-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .speed-value {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .speed-slider {
+      width: 100%;
+      accent-color: var(--accent);
+      margin-bottom: 10px;
+    }
+
+    .dir-buttons {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .dir-btn {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 6px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.9);
+      color: #194732;
+      border: 1px solid rgba(25, 71, 50, 0.2);
+    }
+
+    .dir-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .dir-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .control-note {
+      margin: 8px 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+      min-height: 16px;
+    }
+
     .foot {
       text-align: center;
       color: var(--muted);
@@ -210,9 +275,17 @@
     function renderVehicle(v) {
       const statusClass = v.isOnline ? "online" : "offline";
       const statusText = v.isOnline ? "ONLINE" : "OFFLINE";
-      const speedMetric = v.id === "vehicle1"
-        ? `<div class="metric"><span>Speed PWM</span><strong>${fmt(v.speedPwm)}</strong></div>`
-        : "";
+      const selectedSpeed = Number.isFinite(v.desiredSpeedPwm) ? v.desiredSpeedPwm : 150;
+      const selectedDirection = typeof v.desiredDirection === "string" ? v.desiredDirection : "stop";
+
+      const directionButton = (dir, label) => `
+        <button
+          type="button"
+          class="dir-btn ${selectedDirection === dir ? "active" : ""}"
+          data-vehicle-id="${v.id}"
+          data-control-dir="${dir}"
+        >${label}</button>
+      `;
 
       return `
         <article class="card">
@@ -225,16 +298,70 @@
             <div class="metric"><span>IP</span><strong>${fmt(v.ip)}</strong></div>
             <div class="metric"><span>Battery</span><strong>${fmt(v.battery)}%</strong></div>
             <div class="metric"><span>Distance</span><strong>${fmt(v.distanceCm)} cm</strong></div>
-            ${speedMetric}
+            <div class="metric"><span>Speed PWM</span><strong>${fmt(v.speedPwm)}</strong></div>
+            <div class="metric"><span>Direction</span><strong>${fmt(v.direction, "-").toUpperCase()}</strong></div>
+            <div class="metric"><span>Target Direction</span><strong>${fmt(v.desiredDirection, "-").toUpperCase()}</strong></div>
             <div class="metric"><span>Avg Accel</span><strong>${fmt(v.accel)}</strong></div>
             <div class="metric"><span>Avg Gyro</span><strong>${fmt(v.gyro)}</strong></div>
             <div class="metric"><span>Motor</span><strong>${v.motorRunning ? "RUNNING" : "STOPPED"}</strong></div>
             <div class="metric"><span>Emergency</span><strong>${v.emergencyMode ? "ON" : "OFF"}</strong></div>
           </div>
 
+          <div class="control">
+            <div class="control-top">
+              <span>Dashboard Control</span>
+              <span class="speed-value" id="speed-value-${v.id}">${selectedSpeed}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="255"
+              step="1"
+              value="${selectedSpeed}"
+              class="speed-slider"
+              data-speed-slider="${v.id}"
+            />
+            <div class="dir-buttons">
+              ${directionButton("forward", "FORWARD")}
+              ${directionButton("reverse", "REVERSE")}
+              ${directionButton("stop", "STOP")}
+            </div>
+            <p class="control-note" id="control-note-${v.id}"></p>
+          </div>
+
           <div class="event">${fmt(v.lastEvent, "No events yet")}</div>
         </article>
       `;
+    }
+
+    async function sendControl(vehicleId, direction) {
+      const slider = cardsEl.querySelector(`[data-speed-slider="${vehicleId}"]`);
+      const note = document.getElementById(`control-note-${vehicleId}`);
+      const speedPwm = direction === "stop" ? 0 : Number(slider?.value || 0);
+
+      if (note) {
+        note.textContent = "Sending command...";
+      }
+
+      try {
+        const response = await fetch(`/api/vehicle/${vehicleId}/control`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ direction, speedPwm })
+        });
+
+        if (!response.ok) {
+          throw new Error("Command failed");
+        }
+
+        if (note) {
+          note.textContent = `Command sent: ${direction.toUpperCase()} @ ${speedPwm}`;
+        }
+      } catch (error) {
+        if (note) {
+          note.textContent = "Failed to send command. Check server connection.";
+        }
+      }
     }
 
     async function refresh() {
@@ -257,6 +384,27 @@
         updatedEl.textContent = "Server unreachable. Retrying...";
       }
     }
+
+    cardsEl.addEventListener("input", (event) => {
+      const slider = event.target.closest("[data-speed-slider]");
+      if (!slider) return;
+      const vehicleId = slider.getAttribute("data-speed-slider");
+      const valueEl = document.getElementById(`speed-value-${vehicleId}`);
+      if (valueEl) {
+        valueEl.textContent = slider.value;
+      }
+    });
+
+    cardsEl.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-control-dir]");
+      if (!button) return;
+
+      const vehicleId = button.getAttribute("data-vehicle-id");
+      const direction = button.getAttribute("data-control-dir");
+      if (!vehicleId || !direction) return;
+
+      sendControl(vehicleId, direction);
+    });
 
     refresh();
     setInterval(refresh, 2000);
