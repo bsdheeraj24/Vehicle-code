@@ -31,6 +31,8 @@ bool emergencyMode = false;
 bool previousEmergencyMode = false;
 unsigned long lastPushMs = 0;
 unsigned long lastControlPullMs = 0;
+unsigned long lastReconnectAttemptMs = 0;
+bool wasWifiConnected = false;
 String currentDirection = "stop";
 
 float getDistance() {
@@ -100,6 +102,11 @@ String readJsonValue(String payload, String key) {
 
 void applyControlCommand(String direction, int speedPwm) {
     dutyCycle = constrain(speedPwm, 0, 255);
+
+    if (WiFi.status() != WL_CONNECTED) {
+        stopMotor();
+        return;
+    }
 
     if (emergencyMode) {
         stopMotor();
@@ -179,6 +186,30 @@ void sendHeartbeat(float distanceCm, float accel, float gyro) {
     http.end();
 }
 
+void enforceInternetSafety() {
+    bool connected = WiFi.status() == WL_CONNECTED;
+
+    if (!connected) {
+        if (motorRunning) {
+            stopMotor();
+            Serial.println("WiFi lost: motor stopped");
+        }
+
+        if (millis() - lastReconnectAttemptMs > 3000) {
+            WiFi.reconnect();
+            lastReconnectAttemptMs = millis();
+            Serial.println("Trying WiFi reconnect...");
+        }
+    }
+
+    if (connected && !wasWifiConnected) {
+        Serial.println("WiFi reconnected");
+        postEvent("Vehicle 1 reconnected");
+    }
+
+    wasWifiConnected = connected;
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Vehicle 1 booting...");
@@ -202,6 +233,7 @@ void setup() {
         Serial.println("Connecting to WiFi...");
     }
     Serial.println("WiFi connected");
+    wasWifiConnected = true;
 
     if (!mpu.begin()) {
         Serial.println("MPU6050 not found");
@@ -218,6 +250,8 @@ void setup() {
 }
 
 void loop() {
+    enforceInternetSafety();
+
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
 

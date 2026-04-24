@@ -23,9 +23,11 @@ int dutyCycle = 200;
 bool motorRunning = false;
 unsigned long lastPushMs = 0;
 unsigned long lastControlPullMs = 0;
+unsigned long lastReconnectAttemptMs = 0;
 float lastDistanceCm = -1;
 bool obstacleDetected = false;
 bool previousObstacleDetected = false;
+bool wasWifiConnected = false;
 String currentDirection = "stop";
 
 const float obstacleThresholdCm = 30.0;
@@ -85,6 +87,11 @@ String readJsonValue(String payload, String key) {
 
 void applyControlCommand(String direction, int speedPwm) {
     dutyCycle = constrain(speedPwm, 0, 255);
+
+    if (WiFi.status() != WL_CONNECTED) {
+        stopMotor();
+        return;
+    }
 
     if (direction == "forward") {
         moveForward();
@@ -169,6 +176,36 @@ void sendHeartbeat() {
     http.end();
 }
 
+void enforceInternetSafety() {
+    bool connected = WiFi.status() == WL_CONNECTED;
+
+    if (!connected) {
+        if (motorRunning) {
+            stopMotor();
+            Serial.println("WiFi lost: motor stopped");
+        }
+
+        if (millis() - lastReconnectAttemptMs > 3000) {
+            WiFi.reconnect();
+            lastReconnectAttemptMs = millis();
+            Serial.println("Trying WiFi reconnect...");
+        }
+
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("No Internet");
+        lcd.setCursor(0, 1);
+        lcd.print("Motor Stopped");
+    }
+
+    if (connected && !wasWifiConnected) {
+        Serial.println("WiFi reconnected");
+        postEvent("Vehicle 2 reconnected");
+    }
+
+    wasWifiConnected = connected;
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Vehicle 2 booting...");
@@ -194,12 +231,15 @@ void setup() {
     lcd.setCursor(0, 0);
     lcd.print("Connected");
     Serial.println("WiFi connected");
+    wasWifiConnected = true;
 
     stopMotor();
     postEvent("Vehicle 2 online");
 }
 
 void loop() {
+    enforceInternetSafety();
+
     if (millis() - lastControlPullMs > 700) {
         pullControlCommand();
         lastControlPullMs = millis();
