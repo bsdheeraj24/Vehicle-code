@@ -334,6 +334,72 @@
       `;
     }
 
+    function setText(root, selector, value) {
+      const el = root.querySelector(selector);
+      if (el) {
+        el.textContent = value;
+      }
+    }
+
+    function upsertVehicleCard(v) {
+      let card = cardsEl.querySelector(`[data-vehicle-card="${v.id}"]`);
+
+      if (!card) {
+        const html = renderVehicle(v).replace("<article class=\"card\">", `<article class=\"card\" data-vehicle-card=\"${v.id}\">`);
+        cardsEl.insertAdjacentHTML("beforeend", html);
+        card = cardsEl.querySelector(`[data-vehicle-card="${v.id}"]`);
+      }
+
+      if (!card) return;
+
+      const statusClass = v.isOnline ? "online" : "offline";
+      const statusText = v.isOnline ? "ONLINE" : "OFFLINE";
+      const selectedSpeed = Number.isFinite(v.desiredSpeedPwm) && v.desiredSpeedPwm > 0 ? v.desiredSpeedPwm : 180;
+      const selectedDirection = typeof v.desiredDirection === "string" ? v.desiredDirection : "stop";
+
+      setText(card, ".name", fmt(v.name));
+
+      const pill = card.querySelector(".pill");
+      if (pill) {
+        pill.classList.remove("online", "offline");
+        pill.classList.add(statusClass);
+        pill.textContent = statusText;
+      }
+
+      const metricValues = card.querySelectorAll(".grid .metric strong");
+      if (metricValues.length >= 10) {
+        metricValues[0].textContent = fmt(v.ip);
+        metricValues[1].textContent = `${fmt(v.battery)}%`;
+        metricValues[2].textContent = `${fmt(v.distanceCm)} cm`;
+        metricValues[3].textContent = fmt(v.speedPwm);
+        metricValues[4].textContent = fmt(v.direction, "-").toUpperCase();
+        metricValues[5].textContent = fmt(v.desiredDirection, "-").toUpperCase();
+        metricValues[6].textContent = fmt(v.accel);
+        metricValues[7].textContent = fmt(v.gyro);
+        metricValues[8].textContent = v.motorRunning ? "RUNNING" : "STOPPED";
+        metricValues[9].textContent = v.emergencyMode ? "ON" : "OFF";
+      }
+
+      const slider = card.querySelector(`[data-speed-slider="${v.id}"]`);
+      if (slider && document.activeElement !== slider) {
+        slider.value = String(selectedSpeed);
+      }
+
+      const speedValue = document.getElementById(`speed-value-${v.id}`);
+      if (speedValue && (!slider || document.activeElement !== slider)) {
+        speedValue.textContent = String(selectedSpeed);
+      }
+
+      card.querySelectorAll("[data-control-dir]").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-control-dir") === selectedDirection);
+      });
+
+      const eventEl = card.querySelector(".event");
+      if (eventEl) {
+        eventEl.textContent = fmt(v.lastEvent, "No events yet");
+      }
+    }
+
     async function sendControl(vehicleId, direction) {
       const slider = cardsEl.querySelector(`[data-speed-slider="${vehicleId}"]`);
       const note = document.getElementById(`control-note-${vehicleId}`);
@@ -369,7 +435,16 @@
       try {
         const response = await fetch("/api/status", { cache: "no-store" });
         const data = await response.json();
-        cardsEl.innerHTML = data.vehicles.map(renderVehicle).join("");
+
+        data.vehicles.forEach((vehicle) => upsertVehicleCard(vehicle));
+
+        const ids = new Set(data.vehicles.map((v) => v.id));
+        cardsEl.querySelectorAll("[data-vehicle-card]").forEach((card) => {
+          const id = card.getAttribute("data-vehicle-card");
+          if (!ids.has(id)) {
+            card.remove();
+          }
+        });
 
         const vehicle1 = data.vehicles.find((v) => v.id === "vehicle1");
         if (vehicle1 && isObstacleEvent(vehicle1.lastEvent)) {
