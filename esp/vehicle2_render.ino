@@ -30,6 +30,8 @@ bool obstacleDetected = false;
 bool previousObstacleDetected = false;
 bool wasWifiConnected = false;
 String currentDirection = "stop";
+bool vehicle1ObstacleAlert = false;
+int vehicle1SpeedPwm = 0;
 
 const float obstacleThresholdCm = 30.0;
 
@@ -84,6 +86,80 @@ String readJsonValue(String payload, String key) {
     }
 
     return payload.substring(valueStart, valueEnd);
+}
+
+String extractVehicleObject(String payload, String vehicleId) {
+    String marker = "\"id\":\"" + vehicleId + "\"";
+    int idIndex = payload.indexOf(marker);
+    if (idIndex < 0) return "";
+
+    int objectStart = payload.lastIndexOf('{', idIndex);
+    if (objectStart < 0) return "";
+
+    int depth = 0;
+    for (int i = objectStart; i < payload.length(); i++) {
+        if (payload[i] == '{') depth++;
+        if (payload[i] == '}') {
+            depth--;
+            if (depth == 0) {
+                return payload.substring(objectStart, i + 1);
+            }
+        }
+    }
+
+    return "";
+}
+
+bool containsObstacleAlert(String eventText) {
+    String lower = eventText;
+    lower.toLowerCase();
+    return lower.indexOf("collision warning") >= 0 || lower.indexOf("obstacle") >= 0;
+}
+
+void pullVehicle1Status() {
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    HTTPClient http;
+    String url = String(serverBaseUrl) + "/api/status";
+    http.begin(url);
+    int statusCode = http.GET();
+    if (statusCode != 200) {
+        http.end();
+        return;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    String vehicle1Object = extractVehicleObject(payload, "vehicle1");
+    if (vehicle1Object.length() == 0) return;
+
+    String speedValue = readJsonValue(vehicle1Object, "speedPwm");
+    if (speedValue.length() > 0) {
+        vehicle1SpeedPwm = speedValue.toInt();
+    }
+
+    String emergencyValue = readJsonValue(vehicle1Object, "emergencyMode");
+    String eventValue = readJsonValue(vehicle1Object, "lastEvent");
+    bool emergencyMode = emergencyValue == "true";
+    vehicle1ObstacleAlert = emergencyMode || containsObstacleAlert(eventValue);
+}
+
+void updateLcdDisplay() {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+
+    if (vehicle1ObstacleAlert) {
+        lcd.print("ALERT: V1 OBS");
+        lcd.setCursor(0, 1);
+        lcd.print("STOP / WAIT");
+        return;
+    }
+
+    lcd.print("V1 Speed PWM");
+    lcd.setCursor(0, 1);
+    lcd.print("PWM: ");
+    lcd.print(vehicle1SpeedPwm);
 }
 
 void applyControlCommand(String direction, int speedPwm) {
@@ -253,24 +329,17 @@ void loop() {
 
     if (millis() - lastControlPullMs > 700) {
         pullControlCommand();
+        pullVehicle1Status();
+        if (WiFi.status() == WL_CONNECTED) {
+            updateLcdDisplay();
+        }
         lastControlPullMs = millis();
     }
 
     if (millis() - lastPushMs > 2500) {
         sendHeartbeat();
-
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        if (obstacleDetected) {
-            lcd.print("Obstacle Avoid");
-            lcd.setCursor(0, 1);
-            lcd.print("Dist: ");
-            lcd.print(lastDistanceCm, 1);
-            lcd.print(" cm");
-        } else {
-            lcd.print("Vehicle 2 Ready");
-            lcd.setCursor(0, 1);
-            lcd.print("LCD Display");
+        if (WiFi.status() == WL_CONNECTED) {
+            updateLcdDisplay();
         }
 
         lastPushMs = millis();
