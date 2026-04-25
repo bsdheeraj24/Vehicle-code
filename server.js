@@ -78,6 +78,20 @@ function safeVehicleId(id) {
   return id;
 }
 
+function forceVehicle2Stop(reason) {
+  const vehicle2 = state.vehicle2;
+  const now = Date.now();
+  const alreadyStopped = vehicle2.desiredDirection === "stop" && vehicle2.desiredSpeedPwm === 0;
+
+  vehicle2.desiredDirection = "stop";
+  vehicle2.desiredSpeedPwm = 0;
+  vehicle2.commandUpdatedAt = now;
+
+  if (!alreadyStopped) {
+    vehicle2.lastEvent = `${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} - Auto-stop by server: ${reason}`;
+  }
+}
+
 app.get("/health", (req, res) => {
   refreshOnlineFlags();
   res.json({ ok: true, time: new Date().toISOString() });
@@ -103,6 +117,13 @@ app.post("/api/vehicle/:id/heartbeat", (req, res) => {
   target.motorRunning = typeof body.motorRunning === "boolean" ? body.motorRunning : target.motorRunning;
   target.emergencyMode = typeof body.emergencyMode === "boolean" ? body.emergencyMode : target.emergencyMode;
 
+  if (id === "vehicle1") {
+    const emergencyBySensor = typeof body.distanceCm === "number" && body.distanceCm > 0 && body.distanceCm < 10;
+    if (target.emergencyMode || emergencyBySensor) {
+      forceVehicle2Stop("Vehicle 1 obstacle detected");
+    }
+  }
+
   refreshOnlineFlags();
   return res.json({ ok: true, vehicle: target });
 });
@@ -118,6 +139,10 @@ app.post("/api/vehicle/:id/event", (req, res) => {
 
   target.lastSeen = Date.now();
   target.lastEvent = `${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} - ${eventText}`;
+
+  if (id === "vehicle1" && /collision warning|obstacle/i.test(eventText)) {
+    forceVehicle2Stop(`Vehicle 1 event: ${eventText}`);
+  }
 
   refreshOnlineFlags();
   return res.json({ ok: true, vehicle: target });
